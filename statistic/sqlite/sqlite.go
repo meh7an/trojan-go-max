@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"time"
 
-	// SQLite driver — pure Go, no CGO required
-	_ "modernc.org/sqlite"
+	// SQLite driver — WASM-based, genuinely cross-platform (including MIPS, RISC-V, etc.)
+	_ "github.com/ncruces/go-sqlite3/driver"
 
 	"github.com/p4gefau1t/trojan-go/common"
 	"github.com/p4gefau1t/trojan-go/config"
@@ -102,7 +102,7 @@ func initDatabase(db *sql.DB) error {
 
 func NewAuthenticator(ctx context.Context) (statistic.Authenticator, error) {
 	cfg := config.FromContext(ctx, Name).(*Config)
-	db, err := sql.Open("sqlite", cfg.SQLite.Path)
+	db, err := sql.Open("sqlite3", cfg.SQLite.Path)
 	if err != nil {
 		return nil, common.NewError("failed to open SQLite database").Base(err)
 	}
