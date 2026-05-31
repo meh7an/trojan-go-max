@@ -1,43 +1,62 @@
 ---
-title: "编译和自定义Trojan-Go"
+title: "Building and Customizing Trojan-Go"
 draft: false
 weight: 10
 ---
 
-编译需要Go版本号高于1.14.x，请在编译前确认你的编译器版本。推荐使用snap安装和更新go。
+Go 1.14 or later is required. Verify your compiler version before building. Using `snap` to install and update Go is recommended.
 
-编译方式非常简单，可以使用Makefile预设步骤进行编译：
+### Building with Make
 
 ```shell
 make
-make install #安装systemd服务等，可选
+make install   # optional: installs systemd service files
 ```
 
-或者直接使用Go进行编译：
+### Building directly with Go
 
 ```shell
-go build -tags "full" #编译完整版本
+go build -tags "full"   # build the complete version
 ```
 
-可以通过指定GOOS和GOARCH环境变量，指定交叉编译的目标操作系统和架构，例如
+Cross-compilation is done via the `GOOS` and `GOARCH` environment variables:
 
 ```shell
-GOOS=windows GOARCH=386 go build -tags "full" #windows x86
-GOOS=linux GOARCH=arm64 go build -tags "full" #linux arm64
+GOOS=windows GOARCH=386 go build -tags "full"     # Windows x86
+GOOS=linux   GOARCH=arm64 go build -tags "full"   # Linux ARM64
 ```
 
-你可以使用release.sh进行批量的多个平台的交叉编译，release版本使用了这个脚本进行构建。
+### Custom builds with build tags
 
-Trojan-Go的大多数模块是可插拔的。在build文件夹下可以找到各个模块的导入声明。如果你不需要其中某些功能，或者需要缩小可执行文件的体积，可以使用构建标签(tags)进行模块的自定义，例如
+Most Trojan-Go modules are pluggable. If you do not need certain features, or want to reduce the binary size, use build tags to include only what you need:
 
 ```shell
-go build -tags "full" #编译所有模块
-go build -tags "client" -trimpath -ldflags="-s -w -buildid=" #只有客户端功能，且去除符号表缩小体积
-go build -tags "server mysql" #只有服务端和mysql支持
+go build -tags "full"                                        # all modules
+go build -tags "client" -trimpath -ldflags="-s -w -buildid="  # client only, symbols stripped
+go build -tags "server mysql"                                # server + MySQL support
+go build -tags "server postgresql"                           # server + PostgreSQL support
+go build -tags "server mysql postgresql"                     # server + both database backends
 ```
 
-使用full标签等价于
+The `full` tag is equivalent to:
 
 ```shell
-go build -tags "api client server forward nat other"
+go build -tags "api client server forward nat other mysql postgresql"
 ```
+
+### Available build tags
+
+| Tag          | Description                               |
+| ------------ | ----------------------------------------- |
+| `client`     | Client mode (`run_type: client`)          |
+| `server`     | Server mode (`run_type: server`)          |
+| `forward`    | Forward/tunnel mode (`run_type: forward`) |
+| `nat`        | Transparent proxy mode (`run_type: nat`)  |
+| `api`        | gRPC API server and client                |
+| `mysql`      | MySQL user authentication backend         |
+| `postgresql` | PostgreSQL user authentication backend    |
+| `other`      | Miscellaneous utilities                   |
+| `mini`       | Minimal build (client + server + MySQL)   |
+| `full`       | All modules (see expansion above)         |
+
+> **Note:** The `postgresql` tag requires `github.com/lib/pq` to be present in `go.sum`. Run `go get github.com/lib/pq@v1.10.7 && go mod tidy` before building with this tag for the first time.

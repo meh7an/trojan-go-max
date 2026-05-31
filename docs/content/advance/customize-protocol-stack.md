@@ -1,75 +1,64 @@
 ---
-title: "自定义协议栈"
+title: "Custom Protocol Stack"
 draft: false
 weight: 8
 ---
 
-### 注意，Trojan不支持这个特性
+### Note: the original Trojan does not support this feature
 
-Trojan-Go允许高级用户自定义协议栈。在自定义模式下，Trojan-Go将放弃对协议栈的控制，允许用户操作底层协议栈组合。例如
+Trojan-Go allows advanced users to define a fully custom protocol stack. In custom mode, Trojan-Go surrenders control of the stack and lets you compose the underlying protocol layers yourself. Examples of what becomes possible:
 
-- 在一层TLS上再建立一层或更多层TLS加密
+- Multiple nested TLS layers
+- TLS → WebSocket → TLS → Shadowsocks AEAD
+- Trojan protocol over Shadowsocks AEAD directly on TCP
+- Unwrapping an inbound Trojan TLS stream and re-wrapping it in a new outbound TLS Trojan stream
 
-- 使用TLS传输Websocket流量，在Websocket层上再建立一层TLS，在第二层TLS上再使用Shadowsocks AEAD进行加密传输
+**Do not use this feature unless you understand networking. Incorrect configuration can break Trojan-Go or cause performance and security problems.**
 
-- 在TCP连接上，使用Shadowsocks的AEAD加密传输Trojan协议
+Trojan-Go abstracts every protocol as a _tunnel_. Each tunnel may expose a client (sender), a server (receiver), or both. Customizing the stack means defining how tunnels are composed.
 
-- 将一个入站Trojan的TLS流量解包后重新用TLS包装为新的出站Trojan流量
+### Read the "Overview" page in the Developer Guide before continuing — make sure you understand how Trojan-Go works.
 
-等等。
+Supported tunnels and their properties:
 
-**如果你不了解网络相关知识，请不要尝试使用这个功能。不正确的配置可能导致Trojan-Go无法正常工作，或是导致性能和安全性方面的问题。**
+| Tunnel      | Needs stream from below | Needs packet from below | Provides stream above | Provides packet above | Can be inbound | Can be outbound |
+| ----------- | ----------------------- | ----------------------- | --------------------- | --------------------- | -------------- | --------------- |
+| transport   | n                       | n                       | y                     | y                     | y              | y               |
+| dokodemo    | n                       | n                       | y                     | y                     | y              | n               |
+| tproxy      | n                       | n                       | y                     | y                     | y              | n               |
+| tls         | y                       | n                       | y                     | n                     | y              | y               |
+| trojan      | y                       | n                       | y                     | y                     | y              | y               |
+| mux         | y                       | n                       | y                     | n                     | y              | y               |
+| simplesocks | y                       | n                       | y                     | y                     | y              | y               |
+| shadowsocks | y                       | n                       | y                     | n                     | y              | y               |
+| websocket   | y                       | n                       | y                     | n                     | y              | y               |
+| freedom     | n                       | n                       | y                     | y                     | n              | y               |
+| socks       | y                       | y                       | y                     | y                     | y              | n               |
+| http        | y                       | n                       | y                     | n                     | y              | n               |
+| router      | y                       | y                       | y                     | y                     | n              | y               |
+| adapter     | n                       | n                       | y                     | y                     | y              | n               |
 
-Trojan-Go将所有协议抽象为隧道，每个隧道可能提供客户端，负责发送；也可能提供服务端，负责接受；或者两者皆提供。自定义协议栈即自定义隧道的堆叠方式。
+Custom stacks are defined by naming nodes (tags), providing their configuration, and then describing directed paths composed of those tags.
 
-### 在继续配置之前，请先阅读开发指南中“基本介绍”一节，确保已经理解Trojan-Go运作方式
+For a typical Trojan-Go server the paths are:
 
-下面是Trojan-Go支持的隧道和他们的属性:
+- **Inbound** (two paths; `tls` auto-detects and dispatches Trojan and WebSocket traffic):
+  - `transport → tls → trojan`
+  - `transport → tls → websocket → trojan`
+- **Outbound** (single chain):
+  - `router → freedom`
 
-| 隧道        | 需要下层提供流 | 需要下层提供包 | 向上层提供流 | 向上层提供包 | 可以作为入站 | 可以作为出站 |
-| ----------- | -------------- | -------------- | ------------ | ------------ | ------------ | ------------ |
-| transport   | n              | n              | y            | y            | y            | y            |
-| dokodemo    | n              | n              | y            | y            | y            | n            |
-| tproxy      | n              | n              | y            | y            | y            | n            |
-| tls         | y              | n              | y            | n            | y            | y            |
-| trojan      | y              | n              | y            | y            | y            | y            |
-| mux         | y              | n              | y            | n            | y            | y            |
-| simplesocks | y              | n              | y            | y            | y            | y            |
-| shadowsocks | y              | n              | y            | n            | y            | y            |
-| websocket   | y              | n              | y            | n            | y            | y            |
-| freedom     | n              | n              | y            | y            | n            | y            |
-| socks       | y              | y              | y            | y            | y            | n            |
-| http        | y              | n              | y            | n            | y            | n            |
-| router      | y              | y              | y            | y            | n            | y            |
-| adapter     | n              | n              | y            | y            | y            | n            |
+Inbound paths form a **multi-branch tree** rooted at the first node; graphs that are not trees produce undefined behavior. The outbound must be a single **chain**.
 
-自定义协议栈的工作方式是，定义树/链上节点并分别它们起名（tag）并添加配置，然后使用tag组成的有向路径，描述这棵树/链。例如，对于一个典型的Trojan-Go服务器，可以如此描述：
+Every path must satisfy:
 
-入站，一共两条路径，tls节点将自动识别trojan和websocket流量并进行分发
+1. Start with a tunnel that does **not** require a stream or packet from below (`transport`, `adapter`, `tproxy`, `dokodemo`, etc.).
+2. End with a tunnel that provides **both** stream and packet to the layer above (`trojan`, `simplesocks`, `freedom`, etc.).
+3. All tunnels on an outbound chain must be usable as outbound; all tunnels on all inbound paths must be usable as inbound.
 
-- transport->tls->trojan
+To activate a custom stack, set `run_type` to `custom`. All configuration fields other than `inbound` and `outbound` are ignored.
 
-- transport->tls->websocket->trojan
-
-出站，只能有一条路径
-
-- router->freedom
-
-对于入站，从根开始描述多条路径，组成一棵**多叉树**（也可以退化为一条链），不满足树性质的图将导致未定义的行为；对于出站，必须描述一条**链**。
-
-每条路径必须满足这样的条件：
-
-1. 必须以**不需要下层提供流或包**的隧道开始(transport/adapter/tproxy/dokodemo等)
-
-2. 必须以**能向上层提供包和流**的隧道终止(trojan/simplesocks/freedom等)
-
-3. 出站单链上，隧道必须都可作为出站。入站的所有路径上，隧道必须都可作为入站。
-
-要启用自定义协议栈，将```run_type```指定为custom，此时除```inbound```和```outbound```之外的其他选项将被忽略。
-
-下面是一个例子，你可以在此基础上插入或减少协议节点。配置文件为简明起见，使用YAML进行配置，你也可以使用JSON来配置，除格式不同之外，效果是等价的。
-
-客户端 client.yaml
+### Client example (`client.yaml`)
 
 ```yaml
 run-type: custom
@@ -87,8 +76,7 @@ inbound:
         local-addr: 127.0.0.1
         local-port: 1080
   path:
-    -
-      - adapter
+    - - adapter
       - socks
 
 outbound:
@@ -96,7 +84,7 @@ outbound:
     - protocol: transport
       tag: transport
       config:
-        remote-addr: you_server
+        remote-addr: your_server
         remote-port: 443
 
     - protocol: tls
@@ -114,14 +102,12 @@ outbound:
           - 12345678
 
   path:
-    -
-      - transport
+    - - transport
       - tls
       - trojan
-
 ```
 
-服务端 server.yaml
+### Server example (`server.yaml`)
 
 ```yaml
 run-type: custom
@@ -132,9 +118,9 @@ inbound:
       tag: websocket
       config:
         websocket:
-            enabled: true
-            hostname: example.com
-            path: /ws
+          enabled: true
+          hostname: example.com
+          path: /ws
 
     - protocol: transport
       tag: transport
@@ -171,12 +157,10 @@ inbound:
           - 87654321
 
   path:
-    -
-      - transport
+    - - transport
       - tls
       - trojan1
-    -
-      - transport
+    - - transport
       - tls
       - websocket
       - trojan2
@@ -187,6 +171,5 @@ outbound:
       tag: freedom
 
   path:
-    -
-      - freedom
+    - - freedom
 ```

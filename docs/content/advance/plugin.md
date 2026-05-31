@@ -1,53 +1,47 @@
 ---
-title: "使用Shadowsocks插件/可插拔传输层"
+title: "Using Shadowsocks Plugins / Pluggable Transports"
 draft: false
 weight: 7
 ---
 
-### 注意，Trojan不支持这个特性
+### Note: the original Trojan does not support this feature
 
-Trojan-Go支持可插拔的传输层。原则上，Trojan-Go可以使用任何有TCP隧道功能的软件作为传输层，如v2ray、shadowsocks、kcp等。同时，Trojan-Go也兼容Shadowsocks的SIP003插件标准，如GoQuiet，v2ray-plugin等。也可以使用Tor的传输层插件，如obfs4，meek等。
+Trojan-Go supports a pluggable transport layer. In principle, any software with TCP tunneling capability can be used — V2Ray, Shadowsocks, KCP, and so on. Trojan-Go is also compatible with the Shadowsocks SIP003 plugin standard (GoQuiet, v2ray-plugin, etc.) and with Tor pluggable transports such as obfs4 and meek.
 
-你可以使用这些插件，替换Trojan-Go的TLS传输层。
+When a pluggable transport is enabled, the Trojan-Go **client sends plaintext traffic** to the local plugin, which is responsible for encryption, obfuscation, and delivery to the server-side plugin. The server-side plugin decrypts and decapsulates the traffic, then delivers the **plaintext** to the local Trojan-Go server process.
 
-开启可插拔传输层插件后，Trojan-Go客户端将会把**流量明文**直接传输给客户端本地的插件处理。由客户端插件负责进行加密和混淆，并将流量传输给服务端的插件。服务端的插件接收到流量，进行解密和解析，将**流量明文**传输给服务端本地的Trojan-Go服务端。
+To use any plugin, add a `transport_plugin` section, specify the plugin executable path, and configure it accordingly.
 
-你可以使用任何插件对流量进行加密和混淆，只需添加"transport_plugin"选项，并指定插件的可执行文件的路径，并做好配置即可。
+**Writing your own plugin and protocol is encouraged**, because all existing plugins lack full integration with Trojan-Go's active-probing resistance, and some have no encryption capability at all. See the "Pluggable Transport Plugin Development" page in the Developer Guide if you are interested.
 
-我们更建议**自行设计协议并开发相应插件**。因为目前现有的所有插件无法对接Trojan-Go的对抗主动探测的特性，而且部分插件并无加密能力。如果你对开发插件有兴趣，欢迎在"实现细节和开发指南"一节中查看插件设计的指南。
+### Example: v2ray-plugin (SIP003)
 
-例如，可以使用符合SIP003标准的v2ray-plugin，下面是一个例子:
+> **Security warning:** The configuration below transmits unencrypted Trojan protocol over WebSocket. It is for demonstration purposes only. Never use this to bypass the GFW.
 
-**这个配置中使用了websocket明文传输未经加密的trojan协议，存在安全隐患。这个配置仅作为演示使用。**
-
-**不要在任何情况下使用这个配置穿透GFW。**
-
-服务端配置：
+**Server:**
 
 ```json
-...（省略）
 "transport_plugin": {
     "enabled": true,
     "type": "shadowsocks",
     "command": "./v2ray-plugin",
-    "arg": ["-server", "-host", "www.baidu.com"]
+    "arg": ["-server", "-host", "www.example.com"]
 }
 ```
 
-客户端配置：
+**Client:**
 
 ```json
-...（省略）
 "transport_plugin": {
     "enabled": true,
     "type": "shadowsocks",
     "command": "./v2ray-plugin",
-    "arg": ["-host", "www.baidu.com"]
+    "arg": ["-host", "www.example.com"]
 }
 ```
 
-注意，v2ray-plugin插件需要指定```-server```参数来区分客户端和服务端。更多关于该插件详细的说明，参考v2ray-plugin的文档。
+Note that v2ray-plugin requires a `-server` flag to distinguish server mode from client mode. Refer to v2ray-plugin's documentation for its full options.
 
-启动Trojan-Go后，你可以看到v2ray-plugin启动的输出。插件将把流量伪装为Websocket流量并传输。
+After Trojan-Go starts, you will see v2ray-plugin's startup output. The plugin wraps traffic as WebSocket and forwards it.
 
-非SIP003标准的插件可能需要不同的配置，你可以指定```type```为"other"，并自行指定插件地址，插件启动参数、环境变量。
+For non-SIP003 plugins, set `type` to `"other"` and configure `command`, `arg`, and `env` manually.

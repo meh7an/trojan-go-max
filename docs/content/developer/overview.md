@@ -1,125 +1,89 @@
 ---
-title: "基本介绍"
+title: "Overview"
 draft: false
 weight: 1
 ---
 
-Trojan-Go的核心部分有
+The core components of Trojan-Go are:
 
-- tunnel 各个协议具体实现
+- `tunnel` — concrete implementations of each protocol
+- `proxy` — the proxy core
+- `config` — configuration registration and parsing
+- `redirector` — active-probe deception module
+- `statistic` — user authentication and statistics
 
-- proxy 代理核心
+Source code for each is found in the corresponding directory.
 
-- config 配置注册和解析模块
+## `tunnel.Tunnel` — the Tunnel abstraction
 
-- redirector 主动检测欺骗模块
+Trojan-Go abstracts every protocol (including routing) as a _tunnel_ (`tunnel.Tunnel` interface). Each tunnel may start a server (`tunnel.Server`) and a client (`tunnel.Client`). A server can peel off and accept _streams_ (`tunnel.Conn`) and _packets_ (`tunnel.PacketConn`) from the tunnel below it. A client can create streams and packets through the tunnel below it.
 
-- statistics 用户认证和统计模块
+Each tunnel is unaware of what lies beneath it, but it does know what lies above it.
 
-可以在对应文件夹中找到相关源代码。
+All tunnels require the layer below to provide stream or packet transport (or both). All tunnels must provide stream transport to the layer above, though not necessarily packet transport.
 
-## tunnel.Tunnel隧道
+A tunnel may have only a server, only a client, or both. Tunnels that have both can serve as the transport tunnel between a Trojan-Go client and server.
 
-Trojan-Go将所有协议（包括路由功能等）抽象为隧道(tunnel.Tunnel接口)，每个隧道可开启服务端（tunnel.Server接口）和客户端（tunnel.Client）。每个服务端可以从其底层隧道中，剥离并接受流（tunnel.Conn）和包（tunnel.PacketConn)。客户端可以向底层隧道，创建流和包。
-
-每个隧道并不关心其下方的隧道是什么，但是每个隧道清楚知道这个它上方的其他隧道的相关信息。
-
-所有隧道需要下层提供流或包传输支持，或两者都要求提供。所有隧道必须向上层隧道提供流传输支持，但不一定提供包传输。
-
-隧道可能只有服务端，也可能只有客户端，也可能两者皆有。两者皆有的隧道，可被用于作为Trojan-Go客户端和服务端间的传输隧道。
-
-注意，请区分Trojan-Go的服务端/客户端，和隧道的服务端/客户端的区别。下面是一个方便理解的图例。
+Note the distinction between a _Trojan-Go_ client/server and a _tunnel_ client/server. The following diagram illustrates the relationship:
 
 ```text
-
-  入站                              GFW                                  出站
--------->隧道A服务端->隧道B客户端 ----------------> 隧道B服务端->隧道C客户端----------->
-           (Trojan-Go客户端)                          (Trojan-Go服务端)
-
+  Inbound                          GFW                            Outbound
+-------> Tunnel A server → Tunnel B client -----> Tunnel B server → Tunnel C client ------->
+            (Trojan-Go client side)                  (Trojan-Go server side)
 ```
 
-最底层的隧道为传输层，即不从其他隧道获取或者创建流和包的隧道，充当上图中隧道A或者C的角色。
+The lowest tunnel is the transport layer — a tunnel that neither pulls from nor creates a stream/packet through another tunnel, acting as Tunnel A or C above.
 
-- transport，可插拔传输层
+- `transport` — pluggable transport layer
+- `socks` — SOCKS5 proxy, server side only
+- `tproxy` — transparent proxy, server side only
+- `dokodemo` — reverse proxy, server side only
+- `freedom` — free egress, client side only
 
-- socks，socks5代理，仅隧道服务端
-  
-- tproxy，透明代理，仅隧道服务端
+These tunnels create streams and packets directly from TCP/UDP sockets and accept no underlying tunnel.
 
-- dokodemo，反向代理，仅隧道服务端
+All other tunnels — as long as the layer below satisfies their stream/packet requirements — can be combined and stacked in any number and order. These act as Tunnel B in the diagram:
 
-- freedom，自由出站，仅隧道客户端
+- `trojan`
+- `websocket`
+- `mux`
+- `simplesocks`
+- `tls`
+- `router` (routing, client side only)
 
-这几个隧道直接从TCP/UDP Socket创建流和包，不接受为其底层添加的任何隧道。
+None of these care about the implementation below. They can however dispatch incoming streams and packets to different tunnels above based on content.
 
-其他隧道，只要下层能满足上层对包和流传输的需求，则原则上可以任何方式，任何数量进行组合和堆叠。这些隧道在上图中充当隧道B的角色，他们有
+For a typical Trojan-Go client and server with WebSocket and Mux, the tunnel stacks are:
 
-- trojan
+**Client**
 
-- websocket
+- Inbound (tree):
+  - `transport` (root)
+    - `adapter` — detects HTTP vs SOCKS5 and dispatches
+      - `http` (leaf)
+      - `socks` (leaf)
+- Outbound (chain):
+  - `transport → tls → websocket → trojan → mux → simplesocks`
 
-- mux
+**Server**
 
-- simplesocks
+- Inbound (tree):
+  - `transport` (root)
+    - `tls` — detects HTTP vs non-HTTP and dispatches
+      - `websocket`
+        - `trojan` (leaf)
+          - `mux`
+            - `simplesocks` (leaf)
+      - `trojan` — detects mux vs plain Trojan and dispatches (leaf)
+        - `mux`
+          - `simplesocks` (leaf)
+- Outbound (chain):
+  - `freedom`
 
-- tls
+## `proxy.Proxy` — the proxy core
 
-- router，路由功能，仅隧道客户端
+The proxy core listens on the leaf nodes of the inbound tunnel tree, extracts streams and packets along with their metadata, and forwards them to the single outbound tunnel client.
 
-他们都不关心其下层隧道实现。但可以根据到来的流和包，将其分发给上层隧道。
+There can be multiple inbound protocol stacks (e.g. the client accepting both SOCKS5 and HTTP at the same time; the server accepting both plain Trojan and WebSocket-carried Trojan). There is exactly one outbound.
 
-例如，在这张图中，是一个典型的Trojan-Go客户端和服务端，各个隧道自下往上堆叠的顺序是：
-
-- 隧道A: transport->socks
-
-- 隧道B: transport->tls->trojan
-
-- 隧道C: freedom
-
-实际上的隧道堆叠的情况会比这个更复杂一些。通常的入站的隧道是一棵多叉树的形式，而非一条链。具体解释参考下文。
-
-## proxy.Proxy代理核心
-
-代理核心的作用，是监听上述隧道进行组合堆叠并形成的协议栈，将所有的入站协议栈（多个隧道Server的终端节点，见下）中抽取的流和包，以及对应元信息，转送给出站协议栈（一个隧道Client）。
-
-注意，这里的入站协议栈可以有多个，如客户端可以同时从Socks5和HTTP协议栈中抽取流和包，服务端可以同时从Websocket承载的Trojan协议，和TLS承载的Trojan协议中抽取流和包等。但是出站协议栈只能有一个，如只使用TLS承载的Trojan协议出站。
-
-为了描述入站协议栈（隧道服务端）的组合和堆叠方式，使用一棵多叉树对所有协议栈进行描述。你可以在proxy文件夹中各组件，看到构建树的过程。
-
-而出站协议栈则比较简单，使用一个简单列表即可描述。
-
-所以实际上，对于一个典型的开启了Websocket和Mux的客户端/服务端，上图的隧道堆叠模型为：
-
-客户端
-
-- 入站（树）
-  - transport (根)
-    - adapter 能够识别HTTP和Socks流量并分发给上层协议
-      - http （终端节点）
-      - socks（终端节点）
-
-- 出站(链)
-  - transport (根)
-  - tls
-  - websocket
-  - trojan
-  - mux
-  - simplesocks
-
-服务端
-
-- 入站（树）
-  - transport (根)
-    - tls 能够识别HTTP和非HTTP流量并分发
-      - websocket
-        - trojan（终端节点）
-          - mux
-            - simplesocks （终端节点）
-      - trojan 能够识别mux和普通trojan流量并分发（终端节点）
-        - mux
-          - simplesocks （终端节点）
-
-- 出站（链）
-  - freedom
-
-注意，代理核心只从隧道构成的树的终端节点抽取流和包，并转送到唯一的出站上。多个终端节点的设计的目的，是使Trojan-Go同时兼容Websocket和Trojan协议入站连接，开启/未开启Mux的入站连接，以及HTTP/Socks5自动识别的功能。每个拥有多个儿子的树上节点，具有精确识别和分发流和包给不同的儿子节点的能力。这符合我们假定每个协议了解其上层承载协议的假设。
+The inbound stacks are described as a multi-branch tree; the outbound is a simple list (chain). Each multi-child tree node has the ability to accurately detect and dispatch streams/packets to the correct child — which is consistent with the assumption that each protocol knows which protocols it can carry above it.

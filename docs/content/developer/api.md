@@ -1,28 +1,31 @@
 ---
-title: "API开发"
+title: "API Development"
 draft: false
 weight: 100
 ---
 
-Trojan-Go基于gRPC实现了API，使用protobuf交换数据。客户端可获取流量和速度信息；服务端可获取各用户流量，速度，在线情况，并动态增删用户和限制速度。可以通过在配置文件中添加```api```选项激活API模块。下面是一个例子，各字段含义参见“完整的配置文件”一节。
+Trojan-Go implements its API over gRPC, exchanging data via Protocol Buffers. The client API provides traffic and speed information; the server API provides per-user traffic, speed, and online status, with the ability to dynamically add/remove users and set speed limits.
+
+Enable the API module by adding an `api` block to the configuration file:
 
 ```json
-...
 "api": {
     "enabled": true,
     "api_addr": "0.0.0.0",
     "api_port": 10000,
     "ssl": {
-      "enabled": true,
-      "cert": "api_cert.crt",
-      "key": "api_key.key",
-      "verify_client": true,
-      "client_cert": [
-          "api_client_cert1.crt",
-          "api_client_cert2.crt"
-      ]
-    },
+        "enabled": true,
+        "cert": "api_cert.crt",
+        "key": "api_key.key",
+        "verify_client": true,
+        "client_cert": [
+            "api_client_cert1.crt",
+            "api_client_cert2.crt"
+        ]
+    }
 }
 ```
 
-如果需要实现API客户端进行对接，请参考api/service/api.proto文件。
+See the "Complete Configuration Reference" for field descriptions.
+
+To implement an API client, refer to `api/service/api.proto`.

@@ -1,14 +1,14 @@
 ---
-title: "SimpleSocks协议"
+title: "SimpleSocks Protocol"
 draft: false
 weight: 50
 ---
 
-SimpleSocks协议是无鉴权机制的简单代理协议，本质上是去除了sha224的Trojan协议。使用该协议的目的是减少多路复用时的overhead。
+SimpleSocks is a lightweight proxy protocol with no authentication mechanism — essentially Trojan without the SHA-224 password hash. The purpose of stripping authentication is to reduce per-connection overhead inside a multiplexed tunnel.
 
-只有启用多路复用之后，被复用的连接才会使用这个协议。也即SimpleSocks总是被SMux承载。
+SimpleSocks is only used on connections that have already been demultiplexed by smux; it is always carried inside smux.
 
-SimpleSocks甚至比Socks5更简单，下面是头部结构。
+SimpleSocks is even simpler than SOCKS5. Its header format:
 
 ```text
 +-----+------+----------+----------+-----------+
@@ -18,4 +18,4 @@ SimpleSocks甚至比Socks5更简单，下面是头部结构。
 +-----+------+----------+----------+-----------+
 ```
 
-各字段定义与Trojan协议相同，不再赘述。
+Field definitions are identical to those in the Trojan protocol.
