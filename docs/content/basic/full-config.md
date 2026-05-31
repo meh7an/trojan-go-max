@@ -114,6 +114,11 @@ _Trojan-Go supports YAML syntax as a more human-friendly alternative. The struct
     "check_rate": 60,
     "ssl_mode": "disable"
   },
+  "sqlite": {
+    "enabled": false,
+    "path": "trojan-go.db",
+    "check_rate": 60
+  },
   "api": {
     "enabled": false,
     "api_addr": "",
@@ -366,6 +371,38 @@ CREATE TABLE users (
 );
 CREATE INDEX ON users (password);
 ```
+
+---
+
+### `sqlite` — SQLite database options
+
+Trojan-Go supports SQLite as a lightweight, zero-configuration database backend. Unlike MySQL and PostgreSQL, SQLite requires no server — it stores everything in a single local file. It is ideal for single-server deployments where running a separate database process is undesirable.
+
+> **Note:** This feature is not available in the original Trojan. Build Trojan-Go with the `sqlite` or `full` build tag to include it.
+
+`enabled` — whether to use SQLite for user authentication.
+
+`path` — path to the SQLite database file. Default: `"trojan-go.db"`. The file and schema are created automatically on first run if they do not exist.
+
+`check_rate` — interval in seconds at which Trojan-Go refreshes its in-memory user cache from the database. Default: `60`.
+
+The `users` table is created automatically, but you can also create it manually or pre-populate it:
+
+```sql
+CREATE TABLE IF NOT EXISTS users (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT    NOT NULL DEFAULT '',
+    password TEXT    NOT NULL,
+    quota    INTEGER NOT NULL DEFAULT 0,
+    download INTEGER NOT NULL DEFAULT 0,
+    upload   INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_users_password ON users (password);
+```
+
+`password` is the SHA-224 hex hash of the plaintext password. Traffic values (`download`, `upload`, `quota`) are in bytes. If `download + upload > quota`, the server rejects that user's connections. A `quota` of `-1` means unlimited.
+
+> **Dependency:** run `go get modernc.org/sqlite@v1.18.2 && go mod tidy` before building with the `sqlite` or `full` tag for the first time.
 
 ---
 

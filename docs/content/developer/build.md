@@ -35,28 +35,34 @@ go build -tags "full"                                        # all modules
 go build -tags "client" -trimpath -ldflags="-s -w -buildid="  # client only, symbols stripped
 go build -tags "server mysql"                                # server + MySQL support
 go build -tags "server postgresql"                           # server + PostgreSQL support
-go build -tags "server mysql postgresql"                     # server + both database backends
+go build -tags "server sqlite"                               # server + SQLite support
+go build -tags "server mysql postgresql sqlite"              # server + all database backends
 ```
 
 The `full` tag is equivalent to:
 
 ```shell
-go build -tags "api client server forward nat other mysql postgresql"
+go build -tags "api client server forward nat other mysql postgresql sqlite"
 ```
 
 ### Available build tags
 
-| Tag          | Description                               |
-| ------------ | ----------------------------------------- |
-| `client`     | Client mode (`run_type: client`)          |
-| `server`     | Server mode (`run_type: server`)          |
-| `forward`    | Forward/tunnel mode (`run_type: forward`) |
-| `nat`        | Transparent proxy mode (`run_type: nat`)  |
-| `api`        | gRPC API server and client                |
-| `mysql`      | MySQL user authentication backend         |
-| `postgresql` | PostgreSQL user authentication backend    |
-| `other`      | Miscellaneous utilities                   |
-| `mini`       | Minimal build (client + server + MySQL)   |
-| `full`       | All modules (see expansion above)         |
+| Tag          | Description                                                                   |
+| ------------ | ----------------------------------------------------------------------------- |
+| `client`     | Client mode (`run_type: client`)                                              |
+| `server`     | Server mode (`run_type: server`)                                              |
+| `forward`    | Forward/tunnel mode (`run_type: forward`)                                     |
+| `nat`        | Transparent proxy mode (`run_type: nat`)                                      |
+| `api`        | gRPC API server and client                                                    |
+| `mysql`      | MySQL user authentication backend                                             |
+| `postgresql` | PostgreSQL user authentication backend                                        |
+| `sqlite`     | SQLite user authentication backend (file-based, no server required)           |
+| `other`      | Miscellaneous utilities                                                       |
+| `mini`       | Minimal build (client + server + forward + nat + mysql + postgresql + sqlite) |
+| `full`       | All modules (see expansion above)                                             |
 
-> **Note:** The `postgresql` tag requires `github.com/lib/pq` to be present in `go.sum`. Run `go get github.com/lib/pq@v1.10.7 && go mod tidy` before building with this tag for the first time.
+> **Note:** Each database backend requires its driver to be present in `go.sum` before first build:
+>
+> - MySQL: included in the original `go.sum`
+> - PostgreSQL: `go get github.com/lib/pq@v1.10.7 && go mod tidy`
+> - SQLite: `go get modernc.org/sqlite@v1.18.2 && go mod tidy`
